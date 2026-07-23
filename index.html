@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>작업일지 통합 검색 뷰어</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- SheetJS CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen pb-12">
+
+    <!-- 상단 헤더 -->
+    <header class="bg-indigo-700 text-white sticky top-0 z-30 shadow-md px-4 py-3">
+        <div class="max-w-4xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-2">
+                <i data-lucide="wrench" class="w-6 h-6"></i>
+                <h1 class="font-bold text-lg">작업일지 검색 뷰어</h1>
+            </div>
+            <label class="bg-indigo-600 hover:bg-indigo-500 text-xs px-3 py-2 rounded-lg cursor-pointer flex items-center gap-1 transition">
+                <i data-lucide="file-up" class="w-4 h-4"></i>
+                <span>엑셀 파일 열기</span>
+                <input type="file" id="fileInput" multiple accept=".xlsx, .xls" class="hidden" onchange="handleFiles(this.files)">
+            </label>
+        </div>
+    </header>
+
+    <main class="max-w-4xl mx-auto p-4 space-y-4">
+
+        <!-- 초기 업로드 안내 -->
+        <div id="uploadPrompt" class="bg-white rounded-xl p-6 border border-slate-200 text-center shadow-sm">
+            <div class="w-12 h-12 bg-indigo-100 text-indigo-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <i data-lucide="upload-cloud" class="w-6 h-6"></i>
+            </div>
+            <h2 class="text-base font-bold text-slate-700 mb-1">작업일지 엑셀 파일 열기</h2>
+            <p class="text-xs text-slate-500 mb-4">2024년, 2025년 통합본 엑셀 파일을 한 번에 복수 선택해 주세요.</p>
+            <button onclick="document.getElementById('fileInput').click()" class="bg-indigo-600 text-white px-5 py-2.5 rounded-lg text-sm font-medium hover:bg-indigo-700 transition">
+                파일 선택하기
+            </button>
+        </div>
+
+        <!-- 검색 및 필터 컨트롤 -->
+        <div id="filterControls" class="bg-white rounded-xl p-4 shadow-sm border border-slate-200 space-y-3 hidden">
+            <!-- 키워드 검색 -->
+            <div class="relative">
+                <i data-lucide="search" class="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400"></i>
+                <input type="text" id="searchInput" placeholder="검색어 입력 (작업내용, 장비명 등)" 
+                       class="w-full pl-10 pr-4 py-2.5 bg-slate-50 rounded-lg border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                       oninput="applyFilter()">
+            </div>
+
+            <!-- 조건별 선택 드롭다운 -->
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">연도</label>
+                    <select id="yearFilter" onchange="applyFilter()" class="w-full bg-slate-50 border border-slate-200 text-xs rounded-lg p-2 focus:outline-none font-medium">
+                        <option value="ALL">전체 연도</option>
+                        <option value="2024">2024년</option>
+                        <option value="2025">2025년</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">구분</label>
+                    <select id="sheetFilter" onchange="onCategoryChange()" class="w-full bg-slate-50 border border-slate-200 text-xs rounded-lg p-2 focus:outline-none font-medium">
+                        <option value="ALL">전체 구분</option>
+                        <option value="LLC">LLC</option>
+                        <option value="하버">하버</option>
+                        <option value="GRAB">GRAB</option>
+                        <option value="기타">기타</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">장비명</label>
+                    <select id="equipFilter" onchange="applyFilter()" class="w-full bg-slate-50 border border-slate-200 text-xs rounded-lg p-2 focus:outline-none font-medium">
+                        <option value="ALL">전체 장비</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-[11px] font-semibold text-slate-500 mb-1">정렬</label>
+                    <select id="sortOrder" onchange="applyFilter()" class="w-full bg-slate-50 border border-slate-200 text-xs rounded-lg p-2 focus:outline-none font-medium">
+                        <option value="DESC">최신순</option>
+                        <option value="ASC">오래된순</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="flex justify-between items-center text-xs text-slate-500 pt-1 border-t border-slate-100">
+                <span>총 <strong id="totalCount" class="text-indigo-600 font-bold">0</strong>건</span>
+                <button onclick="resetFilters()" class="text-slate-400 hover:text-slate-600 underline">필터 초기화</button>
+            </div>
+        </div>
+
+        <!-- 결과 리스트 -->
+        <div id="resultsList" class="space-y-3"></div>
+
+    </main>
+
+    <script>
+        // 수정된 장비 목록 (LLC 전체 제거 완료)
+        const EQUIP_OPTIONS = {
+            'LLC': ['1', '2', '1,2'],
+            '하버': ['HMC 280', '320', '420'],
+            'GRAB': ['LLC 1-1', 'LLC 1-2', 'LLC 1-3', 'LLC 2-1', 'LLC 2-2', 'LLC 2-3', 'LLC 3-1', 'LLC 3-2', 'LLC 3-3', '엔진 5-1', '엔진 5-2', '엔진 5-3', '하버 8-1', '하버 8-2', '후크'],
+            '기타': []
+        };
+
+        const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
+        let allLogs = [];
+
+        function handleFiles(files) {
+            if (!files.length) return;
+            allLogs = [];
+            let filesRead = 0;
+
+            Array.from(files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    const data = new Uint8Array(e.target.result);
+                    const workbook = XLSX.read(data, { type: 'array', cellDates: true });
+
+                    workbook.SheetNames.forEach(sheetName => {
+                        const sheet = workbook.Sheets[sheetName];
+                        const json = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false });
+                        
+                        if (json.length < 2) return;
+
+                        let cat = '기타';
+                        if (sheetName.includes('LLC')) cat = 'LLC';
+                        else if (sheetName.includes('하버')) cat = '하버';
+                        else if (sheetName.includes('GRAB')) cat = 'GRAB';
+
+                        let currentFormattedDate = '';
+                        let fileYear = file.name.includes('2024') ? '2024' : (file.name.includes('2025') ? '2025' : '');
+
+                        for (let i = 1; i < json.length; i++) {
+                            const row = json[i];
+                            if (!row || row.length === 0) continue;
+
+                            let rawDate = row[0] !== undefined ? String(row[0]).trim() : '';
+                            let equip = row[1] !== undefined ? String(row[1]).trim() : '';
+                            let content = row[2] !== undefined ? String(row[2]).trim() : '';
+                            let note = row[3] !== undefined ? String(row[3]).trim() : '';
+
+                            // 날짜 정밀 파싱 (행 병합 및 요일 보정)
+                            if (rawDate && rawDate !== 'nan') {
+                                let dateObj = new Date(rawDate);
+                                if (!isNaN(dateObj.getTime()) && dateObj.getFullYear() > 2020) {
+                                    let y = dateObj.getFullYear();
+                                    let m = String(dateObj.getMonth() + 1).padStart(2, '0');
+                                    let d = String(dateObj.getDate()).padStart(2, '0');
+                                    let dow = WEEKDAYS[dateObj.getDay()];
+                                    currentFormattedDate = `${y}년 ${m}월 ${d}일 (${dow})`;
+                                    if (!fileYear) fileYear = String(y);
+                                } else if (rawDate.includes('(') && rawDate.includes(')')) {
+                                    let dow = rawDate.replace(/[\(\)\s]/g, '');
+                                    if (currentFormattedDate && dow) {
+                                        currentFormattedDate = currentFormattedDate.replace(/\([가-힠]\)/, `(${dow})`);
+                                    }
+                                }
+                            }
+
+                            // 텍스트 정제 (ㅡ, - 제거)
+                            content = content.replace(/^[ㅡ\-\s]+/, '').trim();
+                            note = note.replace(/^[ㅡ\-\s]+/, '').trim();
+                            equip = equip.replace(/^[ㅡ\-\s]+/, '').trim();
+
+                            if (!content || content === '-' || content === 'nan') continue;
+
+                            let logYear = fileYear;
+                            if (!logYear && currentFormattedDate) {
+                                logYear = currentFormattedDate.substring(0, 4);
+                            }
+
+                            allLogs.push({
+                                year: logYear || '2024',
+                                fullDate: currentFormattedDate || '날짜 확인 필요',
+                                category: cat,
+                                equip: (equip && equip !== '-') ? equip : '기타',
+                                content: content,
+                                note: (note && note !== '-') ? note : ''
+                            });
+                        }
+                    });
+
+                    filesRead++;
+                    if (filesRead === files.length) {
+                        initAppUI();
+                    }
+                };
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        function initAppUI() {
+            document.getElementById('uploadPrompt').classList.add('hidden');
+            document.getElementById('filterControls').classList.remove('hidden');
+            onCategoryChange();
+            lucide.createIcons();
+        }
+
+        function onCategoryChange() {
+            const cat = document.getElementById('sheetFilter').value;
+            const equipFilter = document.getElementById('equipFilter');
+            equipFilter.innerHTML = '<option value="ALL">전체 장비</option>';
+
+            if (cat === 'ALL') {
+                equipFilter.disabled = false;
+                let allOpts = [];
+                Object.values(EQUIP_OPTIONS).forEach(opts => allOpts.push(...opts));
+                [...new Set(allOpts)].forEach(eq => {
+                    equipFilter.innerHTML += `<option value="${eq}">${eq}</option>`;
+                });
+            } else if (cat === '기타') {
+                equipFilter.disabled = true;
+            } else {
+                equipFilter.disabled = false;
+                (EQUIP_OPTIONS[cat] || []).forEach(eq => {
+                    equipFilter.innerHTML += `<option value="${eq}">${eq}</option>`;
+                });
+            }
+
+            applyFilter();
+        }
+
+        function applyFilter() {
+            const query = document.getElementById('searchInput').value.toLowerCase().trim();
+            const selectedYear = document.getElementById('yearFilter').value;
+            const selectedCat = document.getElementById('sheetFilter').value;
+            const selectedEquip = document.getElementById('equipFilter').value;
+            const sortOrder = document.getElementById('sortOrder').value;
+
+            let filtered = allLogs.filter(item => {
+                const matchesYear = selectedYear === 'ALL' || item.year === selectedYear;
+                const matchesCat = selectedCat === 'ALL' || item.category === selectedCat;
+                
+                let matchesEquip = true;
+                if (selectedCat !== '기타' && selectedEquip !== 'ALL') {
+                    let targetEq = selectedEquip.toLowerCase().replace(/\s+/g, '');
+                    let itemEq = item.equip.toLowerCase().replace(/\s+/g, '');
+                    matchesEquip = itemEq.includes(targetEq) || targetEq.includes(itemEq);
+                }
+
+                const matchesQuery = !query || 
+                    item.fullDate.toLowerCase().includes(query) ||
+                    item.equip.toLowerCase().includes(query) ||
+                    item.content.toLowerCase().includes(query) ||
+                    item.note.toLowerCase().includes(query);
+
+                return matchesYear && matchesCat && matchesEquip && matchesQuery;
+            });
+
+            if (sortOrder === 'ASC') {
+                filtered.reverse();
+            }
+
+            renderResults(filtered);
+        }
+
+        function renderResults(data) {
+            const container = document.getElementById('resultsList');
+            document.getElementById('totalCount').innerText = data.length;
+
+            if (data.length === 0) {
+                container.innerHTML = `
+                    <div class="text-center py-12 text-slate-400 bg-white rounded-xl border border-slate-200">
+                        <i data-lucide="search-x" class="w-8 h-8 mx-auto mb-2 opacity-50"></i>
+                        <p class="text-sm">검색된 작업일지가 없습니다.</p>
+                    </div>`;
+                lucide.createIcons();
+                return;
+            }
+
+            container.innerHTML = data.map(item => `
+                <div class="bg-white rounded-xl p-4 shadow-sm border border-slate-200 space-y-2 hover:border-indigo-300 transition">
+                    <div class="flex justify-between items-center gap-2 border-b border-slate-100 pb-2">
+                        <div class="flex items-center gap-2">
+                            <span class="bg-indigo-50 text-indigo-700 text-xs px-2.5 py-1 rounded-md font-bold border border-indigo-100">
+                                ${item.category}
+                            </span>
+                            ${item.category !== '기타' ? `<span class="font-bold text-slate-800 text-sm">${item.equip}</span>` : ''}
+                        </div>
+                        <span class="text-xs text-indigo-900 font-semibold bg-slate-100 px-2.5 py-1 rounded-md">${item.fullDate}</span>
+                    </div>
+                    <div class="text-xs text-slate-800 whitespace-pre-line leading-relaxed font-normal">
+                        ${highlightText(item.content)}
+                    </div>
+                    ${item.note ? `
+                        <div class="text-[11px] text-amber-800 bg-amber-50 rounded p-2 mt-1 border border-amber-100">
+                            <strong>비고:</strong> ${highlightText(item.note)}
+                        </div>
+                    ` : ''}
+                </div>
+            `).join('');
+
+            lucide.createIcons();
+        }
+
+        function highlightText(text) {
+            const query = document.getElementById('searchInput').value.trim();
+            if (!query) return text;
+            const regex = new RegExp(`(${query})`, 'gi');
+            return text.replace(regex, '<mark class="bg-yellow-200 text-slate-900 rounded px-0.5">$1</mark>');
+        }
+
+        function resetFilters() {
+            document.getElementById('searchInput').value = '';
+            document.getElementById('yearFilter').value = 'ALL';
+            document.getElementById('sheetFilter').value = 'ALL';
+            document.getElementById('sortOrder').value = 'DESC';
+            onCategoryChange();
+        }
+
+        lucide.createIcons();
+    </script>
+</body>
+</html>
